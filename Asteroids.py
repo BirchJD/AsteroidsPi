@@ -1,0 +1,317 @@
+#!/usr/bin/python
+
+# AsteroidsPi - Raspberry Pi Asteroids Using Python and PyGame
+# Copyright (C) 2015 Jason Birch
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#/****************************************************************************/
+#/* AsteroidsPi - Raspberry Pi Asteroids Using Python and PyGame             */
+#/* ------------------------------------------------------------------------ */
+#/* V1.00 - 2016-11-07 - Jason Birch                                         */
+#/* ------------------------------------------------------------------------ */
+#/* Conversion of Asteroids example game programming on multiple platforms,  */
+#/* Raspberry Pi Asteroids Using Python and PyGame.                          */
+#/****************************************************************************/
+
+
+import time
+import random
+import pygame
+import Common
+import Text
+import Number
+import AstroShot
+import AstroShip
+import AstroUFO
+import AstroRock
+
+
+global ThisSurface
+
+
+#  /*********************/
+# /* Define constants. */
+#/*********************/
+EVENT_TIMER = pygame.USEREVENT + 1
+
+START_ROCKS = 4
+MAX_ROCKS = 100
+HISCORE_XOFFSET = 180
+HISCORE_YOFFSET = 0
+GAMEOVER_XOFFSET = 75
+GAMEOVER_YOFFSET = 5
+INSERTCOIN_XOFFSET = 95
+INSERTCOIN_YOFFSET = 5
+HISCORE_SCALE = 5
+
+#  /********************/
+# /* Set random seed. */
+#/********************/
+random.seed(time.gmtime())
+
+#  /*******************************/
+# /* Initialise game components. */
+#/*******************************/
+pygame.init()
+pygame.mixer.init()
+ThisSurface = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF)
+ThisVideoInfo = pygame.display.Info()
+pygame.mouse.set_visible(False)
+ThisSurface.fill((0x00, 0x00, 0x00))
+pygame.display.flip()
+
+
+#  /*****************/
+# /* Game objects. */
+#/*****************/
+Ship = AstroShip.AstroShip()
+UFO = AstroUFO.AstroUFO()
+Rock = [AstroRock.AstroRock() for X in range(MAX_ROCKS)]
+HiScore = Number.Number()
+GameOver = Text.Text()
+InsertCoin = Text.Text()
+
+BeltWav = pygame.mixer.Sound("Sounds/Belt.wav")
+
+#  /***************/
+# /* Game flags. */
+#/***************/
+Exit = False
+SetFlag = False
+ThrustFlag = False
+RotateLeftFlag = False
+RotateRightFlag = False
+
+
+
+def DrawGraphics():
+#  /*******************************/
+# /* Draw ship and rock objects. */
+#/*******************************/
+   InsertCoin.Draw(ThisSurface)
+   GameOver.Draw(ThisSurface)
+   HiScore.Draw(ThisSurface)
+   Ship.Draw(ThisSurface)
+   UFO.Draw(ThisSurface)
+   for Count in range(MAX_ROCKS):
+      Rock[Count].Draw(ThisSurface)
+
+   Common.DrawUpdate()
+
+
+
+def Timer():
+   global FirstRock
+   global NextRock
+
+   if ThrustFlag:
+      Ship.Thrust()
+   elif RotateLeftFlag:
+      Ship.IncAngle(False)
+      Ship.IncAngle(False)
+   elif RotateRightFlag:
+      Ship.IncAngle(True)
+      Ship.IncAngle(True)
+
+   Ship.Move()
+   UFO.Move()
+   RockFound = False
+   for Count in range(MAX_ROCKS):
+      if Rock[Count].GetSize() != AstroRock.AstroRock.INACTIVE:
+         RockFound = True
+
+      Rock[Count].Move()
+
+#  /*****************************/
+# /* Check for ship collision. */
+#/*****************************/
+      if Ship.GetCrash() == False and UFO.Collide(Ship.GetXOffset(), Ship.GetYOffset(), Ship.GetWidth(), Ship.GetHeight()) == True:
+         Ship.SetCrash(True)
+      if UFO.GetShot().Active() == True and Ship.Collide(UFO.GetShot().GetXOffset(), UFO.GetShot().GetYOffset(), 2, 2) == True:
+         Ship.SetCrash(True)
+      if Ship.GetCrash() == False and Rock[Count].Collide(Ship.GetXOffset(), Ship.GetYOffset(), Ship.GetWidth(), Ship.GetHeight()) == True:
+         Ship.SetCrash(True)
+         NextRock += 1
+         Rock[NextRock].SetArea(Common.Desktop, Ship.GetXOffset(), Ship.GetYOffset(), Rock[Count].GetSize())
+
+#  /*************************/
+# /* Check for shot rocks. */
+#/*************************/
+      for ShotCount in range(Ship.GetShotCount()):
+         if Ship.GetShot(ShotCount).Active() != False:
+            if UFO.Collide(Ship.GetShot(ShotCount).GetXOffset(), Ship.GetShot(ShotCount).GetYOffset(), 2, 2) == True:
+               Ship.SetScore(Ship.GetScore() + 25)
+               Ship.GetShot(ShotCount).Destroy()
+            if Rock[Count].Collide(Ship.GetShot(ShotCount).GetXOffset(), Ship.GetShot(ShotCount).GetYOffset(), 2, 2) == True:
+               Ship.SetScore(Ship.GetScore() + 5 * Rock[Count].GetSize())
+               Ship.GetShot(ShotCount).Destroy()
+               if NextRock + 1 < MAX_ROCKS:
+                  NextRock += 1
+                  Rock[NextRock].SetArea(Common.Desktop, Rock[Count].GetXOffset(), Rock[Count].GetYOffset(), Rock[Count].GetSize())
+
+   if RockFound == False:
+      BeltWav.play()
+      FirstRock += 1
+      NextRock = FirstRock
+      for Count in range(FirstRock):
+         Rock[Count].SetArea(Common.Desktop, AstroRock.AstroRock.NEW_POSITION, AstroRock.AstroRock.NEW_POSITION, 0)
+
+   GameOver.SetVisible(Ship.GetLives() == False)
+   InsertCoin.SetVisible(GameOver.GetVisible() == False and Ship.GetLives() == False)
+
+   DrawGraphics()
+
+
+
+#  /*****************************/
+# /* Configure game variables. */
+#/*****************************/
+GameOver = Text.Text()
+GameOver.SetLocation((Common.Desktop.width - Common.Desktop.x) / 2 - GAMEOVER_XOFFSET, (Common.Desktop.height - Common.Desktop.y) / 2 - GAMEOVER_YOFFSET, 5, 200, False, "GAME OVER", 1)
+
+InsertCoin = Text.Text()
+InsertCoin.SetLocation((Common.Desktop.width - Common.Desktop.x) / 2 - INSERTCOIN_XOFFSET, (Common.Desktop.height - Common.Desktop.y) / 2 - INSERTCOIN_YOFFSET, 5, 15, True, "INSERT COIN", 1)
+
+HiScore = Number.Number()
+HiScore.SetLocation(Common.Desktop.width - HISCORE_XOFFSET, HISCORE_YOFFSET, HISCORE_SCALE, 1)
+
+Ship = AstroShip.AstroShip()
+Ship.SetArea(Common.Desktop, 1)
+
+UFO = AstroUFO.AstroUFO()
+UFO.SetArea(Common.Desktop)
+
+FirstRock = START_ROCKS
+NextRock = FirstRock
+for Count in range(FirstRock):
+   Rock[Count].SetArea(Common.Desktop, AstroRock.AstroRock.NEW_POSITION, AstroRock.AstroRock.NEW_POSITION, 0)
+
+#  /**************************************************************/
+# /* Process application messages until the ESC key is pressed. */
+#/**************************************************************/
+pygame.time.set_timer(EVENT_TIMER, 100)
+ShotKeyFlag = False
+LastShotKeyFlag = False
+ExitFlag = False
+while ExitFlag == False:
+#  /*************************************/
+# /* Yeald for other processes to run. */
+#/*************************************/
+   pygame.time.wait(25)
+
+#  /************************************/
+# /* Process application event queue. */
+#/************************************/
+   for ThisEvent in pygame.event.get():
+#  /******************************************************************/
+# /* If ptyhon has posted a QUIT message, flag to exit applicaiton. */
+#/******************************************************************/
+      if ThisEvent.type == pygame.QUIT:
+         ExitFlag = True
+         break
+
+#  /*********************************************************/
+# /* On timer period perform one frame of the application. */
+#/*********************************************************/
+      elif ThisEvent.type == EVENT_TIMER:
+
+         Timer()
+
+#  /*************************/
+# /* Update display frame. */
+#/*************************/
+         DrawGraphics()
+
+#  /****************************************************************/
+# /* Check for ESC key press, and exit application when detected. */
+#/****************************************************************/
+         KeysPressed = pygame.key.get_pressed()
+
+#  /****************************/
+# /* Handle key press events. */
+#/****************************/
+         if KeysPressed[pygame.K_ESCAPE]:
+            ExitFlag = True
+            break
+
+#  /****************************/
+# /* 'Ctrl' key press, shoot. */
+#/****************************/
+         if KeysPressed[pygame.K_LCTRL]:
+            ShotKeyFlag = True
+         else:
+            ShotKeyFlag = False
+         if ShotKeyFlag != LastShotKeyFlag:
+            Ship.Shoot()
+         LastShotKeyFlag = ShotKeyFlag
+
+#  /***************************/
+# /* 'up' key press, thrust. */
+#/***************************/
+         if KeysPressed[pygame.K_LALT]:
+            ThrustFlag = True
+         else:
+            ThrustFlag = False
+
+#  /**********************************/
+# /* 'left' key press, rotate left. */
+#/**********************************/
+         if KeysPressed[pygame.K_LEFT]:
+            RotateLeftFlag = True
+         else:
+            RotateLeftFlag = False
+
+#  /************************************/
+# /* 'right' key press, rotate right. */
+#/************************************/
+         if KeysPressed[pygame.K_RIGHT]:
+            RotateRightFlag = True
+         else:
+            RotateRightFlag = False
+
+#  /*********************************/
+# /* 'down' key press, hyperspace. */
+#/*********************************/
+         if KeysPressed[pygame.K_SPACE]:
+            Ship.Hyperspace()
+
+#  /*****************************/
+# /* 'F1' key press, new game. */
+#/*****************************/
+         if KeysPressed[pygame.K_RETURN]:
+            if Ship.GetLives() == False:
+               if Ship.GetScore() > HiScore.GetNumber():
+                  HiScore.SetNumber(Ship.GetScore())
+               Ship.Reset()
+               UFO.Destroy()
+               UFO.GetShot().Destroy()
+               FirstRock = START_ROCKS
+               NextRock = FirstRock
+               for Count in range(MAX_ROCKS):
+                  Rock[Count].Destroy()
+               for Count in range(FirstRock):
+                  Rock[Count].SetArea(Common.Desktop, AstroRock.AstroRock.NEW_POSITION, AstroRock.AstroRock.NEW_POSITION, 0)
+
+#  /*****************/
+# /* Stop threads. */
+#/*****************/
+ExitFlag = True
+
+#  /*********************************/
+# /* Application clean up and end. */
+#/*********************************/
+pygame.time.set_timer(EVENT_TIMER, 0)
+pygame.mouse.set_visible(True)
+
